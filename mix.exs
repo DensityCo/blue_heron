@@ -57,8 +57,7 @@ defmodule BlueHeron.MixProject do
       extras: [
         "README.md",
         "CHANGELOG.md",
-        NOTICE: [title: "Notice"],
-        LICENSE: [title: "License"]
+        NOTICE: [title: "Notice"]
       ],
       main: "readme",
       source_ref: "v#{@version}",
@@ -70,17 +69,19 @@ defmodule BlueHeron.MixProject do
   defp package() do
     [
       files: [
+        "CHANGELOG.md",
         "lib",
-        "test",
+        "LICENSES/*",
         "mix.exs",
-        "README.md",
-        "LICENSE",
         "NOTICE",
-        "CHANGELOG.md"
+        "README.md",
+        "REUSE.toml",
+        "test"
       ],
       licenses: ["Apache-2.0"],
       links: %{
-        "GitHub" => @source_url
+        "GitHub" => @source_url,
+        "REUSE Compliance" => "https://api.reuse.software/info/github.com/blue-heron/blue_heron"
       }
     ]
   end
