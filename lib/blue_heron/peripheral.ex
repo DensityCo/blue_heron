@@ -51,9 +51,12 @@ defmodule BlueHeron.Peripheral do
   end
 
   @doc """
-  Get the current effective ATT MTU for the active connection.
+  Get the current effective ATT MTU.
+
+  Returns the spec default (23) before an MTU exchange has completed on the
+  active connection, and the negotiated value afterwards.
   """
-  @spec current_mtu() :: {:ok, non_neg_integer()} | {:error, :setup_incomplete | :no_connection}
+  @spec current_mtu() :: non_neg_integer()
   def current_mtu() do
     GenServer.call(__MODULE__, :current_mtu)
   end
@@ -231,20 +234,16 @@ defmodule BlueHeron.Peripheral do
   end
 
   @impl GenServer
+  def handle_call(:current_mtu, _from, state) do
+    {:reply, GATT.Server.current_mtu(state.gatt_server), state}
+  end
+
   def handle_call(_call, _from, %{ready?: false} = state) do
     {:reply, {:error, :setup_incomplete}, state}
   end
 
   def handle_call({:exchange_mtu, _local_mtu}, _from, %{connection: nil} = state) do
     {:reply, {:error, :no_connection}, state}
-  end
-
-  def handle_call(:current_mtu, _from, %{connection: nil} = state) do
-    {:reply, {:error, :no_connection}, state}
-  end
-
-  def handle_call(:current_mtu, _from, state) do
-    {:reply, {:ok, GATT.Server.current_mtu(state.gatt_server)}, state}
   end
 
   def handle_call({:exchange_mtu, local_mtu}, _from, state) do
