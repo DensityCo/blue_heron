@@ -55,8 +55,10 @@ defmodule BlueHeron.ACLTest do
 
     assert [first, second] = ACL.fragment(acl, 251)
 
+    # PB=0b10 on the first fragment, PB=0b01 on the continuation (BT Core
+    # 5.4 Vol 4 Part E §5.4.2 — required on LE links).
     assert first.handle == acl.handle
-    assert first.flags == %{bc: 0, pb: 0}
+    assert first.flags == %{bc: 0, pb: 2}
     assert byte_size(first.data) == 251
 
     assert second.handle == acl.handle

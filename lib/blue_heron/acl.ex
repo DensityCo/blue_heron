@@ -15,14 +15,25 @@ defmodule BlueHeron.ACL do
   defstruct [:handle, :flags, :data]
 
   def fragment(%ACL{} = acl, max_size) when is_integer(max_size) and max_size > 0 do
-    acl.data
-    |> payload()
-    |> chunks(max_size)
-    |> Enum.with_index()
-    |> Enum.map(fn
-      {data, 0} -> %{acl | data: data}
-      {data, _index} -> %{acl | flags: Map.put(acl.flags, :pb, 1), data: data}
-    end)
+    case acl.data |> payload() |> chunks(max_size) do
+      [single] ->
+        # Fits in one ACL packet — preserve caller's PB flag (typically 0b00).
+        [%{acl | data: single}]
+
+      chunks ->
+        # Multi-fragment LE PDU. Per BT Core 5.4 Vol 4 Part E §5.4.2:
+        #   PB = 0b10  →  first fragment of an L2CAP PDU
+        #   PB = 0b01  →  continuation fragment
+        # PB = 0b00 is BR/EDR-only and is dropped by LE central host stacks
+        # (which is why a multi-fragment notification with PB=00 on the start
+        # frame ack's at the controller but never delivers to the GATT client).
+        chunks
+        |> Enum.with_index()
+        |> Enum.map(fn
+          {data, 0} -> %{acl | flags: Map.put(acl.flags, :pb, 2), data: data}
+          {data, _index} -> %{acl | flags: Map.put(acl.flags, :pb, 1), data: data}
+        end)
+    end
   end
 
   def deserialize(
