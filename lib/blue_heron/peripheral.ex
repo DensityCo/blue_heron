@@ -46,8 +46,16 @@ defmodule BlueHeron.Peripheral do
   Exchange MTU with a connected central.
   """
   @spec exchange_mtu(non_neg_integer()) :: :ok | {:error, term()}
-  def exchange_mtu(server_mtu) do
-    GenServer.call(__MODULE__, {:exchange_mtu, server_mtu})
+  def exchange_mtu(local_mtu) do
+    GenServer.call(__MODULE__, {:exchange_mtu, local_mtu})
+  end
+
+  @doc """
+  Get the current effective ATT MTU for the active connection.
+  """
+  @spec current_mtu() :: {:ok, non_neg_integer()} | {:error, :setup_incomplete | :no_connection}
+  def current_mtu() do
+    GenServer.call(__MODULE__, :current_mtu)
   end
 
   @doc """
@@ -83,14 +91,15 @@ defmodule BlueHeron.Peripheral do
   end
 
   @impl GenServer
-  def init(_) do
+  def init(args) do
     :ok = PropertyTable.subscribe(BlueHeron.GATT, ["profile"])
     profile = PropertyTable.get(BlueHeron.GATT, ["profile"], [])
+    local_mtu = Keyword.get(args, :local_mtu, 23)
 
     state = %{
       ready?: false,
       connection: nil,
-      gatt_server: GATT.Server.init(profile)
+      gatt_server: GATT.Server.init(profile, local_mtu)
     }
 
     :ok = BlueHeron.Registry.subscribe()
@@ -104,7 +113,7 @@ defmodule BlueHeron.Peripheral do
       )
       when is_list(profile) do
     Logger.info("Rebuilding GATT")
-    gatt_server = GATT.Server.init(profile)
+    gatt_server = GATT.Server.init(profile, state.gatt_server.local_mtu)
     new_state = %{state | gatt_server: gatt_server}
 
     if new_state.connection do
@@ -129,8 +138,9 @@ defmodule BlueHeron.Peripheral do
     }
 
     :ok = BlueHeron.SMP.set_connection(connection)
+    gatt_server = GATT.Server.reset_mtu(state.gatt_server)
 
-    {:noreply, %{state | connection: connection}}
+    {:noreply, %{state | connection: connection, gatt_server: gatt_server}}
   end
 
   def handle_info({:HCI_EVENT_PACKET, %EnhancedConnectionCompleteV1{} = event}, state) do
@@ -143,8 +153,9 @@ defmodule BlueHeron.Peripheral do
     }
 
     :ok = BlueHeron.SMP.set_connection(connection)
+    gatt_server = GATT.Server.reset_mtu(state.gatt_server)
 
-    {:noreply, %{state | connection: connection}}
+    {:noreply, %{state | connection: connection, gatt_server: gatt_server}}
   end
 
   def handle_info({:HCI_EVENT_PACKET, %DisconnectionComplete{} = pkt}, state) do
@@ -224,15 +235,23 @@ defmodule BlueHeron.Peripheral do
     {:reply, {:error, :setup_incomplete}, state}
   end
 
-  def handle_call({:exchange_mtu, _server_mtu}, _from, %{connection: nil} = state) do
+  def handle_call({:exchange_mtu, _local_mtu}, _from, %{connection: nil} = state) do
     {:reply, {:error, :no_connection}, state}
   end
 
-  def handle_call({:exchange_mtu, server_mtu}, _from, state) do
-    {:ok, request} = GATT.Server.exchange_mtu(state.gatt_server, server_mtu)
+  def handle_call(:current_mtu, _from, %{connection: nil} = state) do
+    {:reply, {:error, :no_connection}, state}
+  end
+
+  def handle_call(:current_mtu, _from, state) do
+    {:reply, {:ok, GATT.Server.current_mtu(state.gatt_server)}, state}
+  end
+
+  def handle_call({:exchange_mtu, local_mtu}, _from, state) do
+    {gatt_server, {:ok, request}} = GATT.Server.exchange_mtu(state.gatt_server, local_mtu)
     acl = build_l2cap_acl(state.connection.handle, 0x0004, request)
     reply = BlueHeron.HCI.Transport.buffer_acl(acl)
-    {:reply, reply, state}
+    {:reply, reply, %{state | gatt_server: gatt_server}}
   end
 
   def handle_call(
