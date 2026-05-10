@@ -10,6 +10,7 @@ defmodule BlueHeron.ACL do
   Bluetooth Spec v5.2, vol 4, Part E, 5.4.2
   """
   alias BlueHeron.{ACL, L2Cap}
+  import Bitwise
   require Logger
 
   defstruct [:handle, :flags, :data]
@@ -36,9 +37,20 @@ defmodule BlueHeron.ACL do
     end
   end
 
-  def deserialize(
-        <<handle::little-12, pb::2, bc::2, length::little-16, acl_data::binary-size(length)>>
-      ) do
+  # ACL packet header layout (BT Core 5.4 Vol 4 Part E §5.4.2):
+  #   byte[0]              = handle[7..0]
+  #   byte[1] bits[3..0]   = handle[11..8]
+  #   byte[1] bits[5..4]   = pb
+  #   byte[1] bits[7..6]   = bc
+  # As a single little-endian uint16: bc<<14 | pb<<12 | handle.
+  #
+  # The previous bit-syntax (`<<handle::little-12, pb::2, bc::2>>`) packed
+  # bits in a different order and only round-tripped while pb=bc=0 (which
+  # was always the case before host-side fragmentation needed pb=2 / pb=1).
+  def deserialize(<<header::little-16, length::little-16, acl_data::binary-size(length)>>) do
+    handle = header &&& 0x0FFF
+    pb = header >>> 12 &&& 0x3
+    bc = header >>> 14 &&& 0x3
     data = BlueHeron.L2Cap.deserialize(acl_data)
 
     %ACL{
@@ -54,7 +66,8 @@ defmodule BlueHeron.ACL do
 
   def serialize(%ACL{data: data, handle: handle, flags: %{pb: pb, bc: bc}}) do
     length = byte_size(data)
-    <<handle::little-12, pb::2, bc::2, length::little-16, data::binary-size(length)>>
+    header = bc <<< 14 ||| pb <<< 12 ||| handle
+    <<header::little-16, length::little-16, data::binary-size(length)>>
   end
 
   def serialize(binary) when is_binary(binary), do: binary
