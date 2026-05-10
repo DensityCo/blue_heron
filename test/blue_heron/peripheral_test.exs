@@ -8,31 +8,29 @@ defmodule BlueHeron.PeripheralTest do
   alias BlueHeron.GATT.Server
   alias BlueHeron.Peripheral
 
-  test "current_mtu returns setup incomplete before peripheral is ready" do
-    state = state(ready?: false, connection: %{handle: 1})
+  test "current_mtu returns the spec default before the peripheral is ready" do
+    state = state(ready?: false)
 
-    assert {:reply, {:error, :setup_incomplete}, ^state} =
-             Peripheral.handle_call(:current_mtu, self(), state)
+    assert {:reply, 23, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
   end
 
-  test "current_mtu returns no connection when peripheral is ready without a connection" do
+  test "current_mtu returns the spec default when there is no connection" do
     state = state()
 
-    assert {:reply, {:error, :no_connection}, ^state} =
-             Peripheral.handle_call(:current_mtu, self(), state)
+    assert {:reply, 23, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
   end
 
-  test "current_mtu returns default mtu before mtu exchange" do
+  test "current_mtu returns the spec default before mtu exchange" do
     state = state(connection: %{handle: 1})
 
-    assert {:reply, {:ok, 23}, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
+    assert {:reply, 23, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
   end
 
-  test "current_mtu returns negotiated mtu" do
+  test "current_mtu returns the negotiated mtu" do
     gatt_server = %{Server.init([], 512) | mtu: 247}
     state = state(connection: %{handle: 1}, gatt_server: gatt_server)
 
-    assert {:reply, {:ok, 247}, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
+    assert {:reply, 247, ^state} = Peripheral.handle_call(:current_mtu, self(), state)
   end
 
   defp state(overrides \\ []) do
